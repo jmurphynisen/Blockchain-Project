@@ -6,6 +6,7 @@ import flask
 from flask import Flask, jsonify, request
 import random
 import hmac
+from urllib.parse import urlparse
 
 class Blockchain(object):
     """
@@ -14,10 +15,10 @@ class Blockchain(object):
 
     def __init__(self):
         """
-        Initialize chain with list of incoming transactions, a global chain, and a queue of candidate blocks to be validated
+        Initialize chain with list of nodes on network, incoming revisions and candidates, and a master chain
         """
-        self.transactions, self.masterChain, self.candidateQueue = [], [], []
-        self.minedchain = []
+        self.revisionQueue, self.masterChain, self.candidateQueue = [], [], []
+        self.nodes = []
         self.genesis()
     
     def genesis(self): 
@@ -35,16 +36,17 @@ class Blockchain(object):
         newBlock = {
             'index': len(self.masterChain) + 1,
             'timestamp': time(),
-            'transactions': self.transactions,
+            'revision': self.revisionQueue,
+            'cID': self.revisionQueue['CID'],
             'proof': proof,
-            'previousHash': previousHash or self.hash(self.chain[-1]),
+            'previousHash': previousHash or self.hash(self.masterChain[-1]),
         }
 
         if previousHash == 1: self.masterChain.append(newBlock)
 
         self.candidateQueue.append(newBlock)
 
-        if len(self.transactions) != 0: self.transactions.pop(-1)
+        if len(self.revisionQueue) != 0: self.revisionQueue.pop(-1)
 
         print("New block added at " + time())
 
@@ -64,19 +66,27 @@ class Blockchain(object):
 
         return keySignature
 
-    def newTransaction(self, buyer, buyee, amount):
+    def getLocation(cid):
         """
-        Pushes new transaction with buyer (n2), buyee (n1), the amount the book sold for, time it was made, and an ID for the transaction
+        Use file system api to retrive location by cid or whatever file is stored as 
         """
-        transID = random.getrandbits(128)
-        self.transactions.append({
-            'buyer': buyer,
-            'buyee': buyee,
-            'buyerKey': self.generateKey(),
-            'buyeeKey': self.generateKey(),
-            'amount': amount,
+        return 0
+
+    def newRevision(self, author, editor, cid, rawData):
+        """
+        Pushes new revision with editor (n2), author (n1), the location of the file, new raw data, CID, id of revision
+        """
+        revisionID = random.getrandbits(128)
+        self.revisionQueue.append({
+            'author': author,
+            'editor': editor or None,
+            'editorKey': self.generateKey() or None,
+            'authorKey': self.generateKey(),
+            'CID': cid,
             'time': time(),
-            'transID': transID
+            'location': self.getLocation(cid),
+            'revisionID': revisionID,
+            'rawData': hashlib.sha256(rawData)
         })
 
         return self.lastBlock['index'] + 1
@@ -126,3 +136,10 @@ class Blockchain(object):
             elif self.masterChain.index(block) != self.masterChain.index(self.lastBlock()) - 1: return False
 
         return True
+    
+    def registerAddress(self, address):
+        """
+        Register new node on network with given address
+        """
+        url = urlparse(address)
+        self.nodes.append(url.netloc)
