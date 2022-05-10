@@ -62,10 +62,10 @@ def validate():
     """
     Validates block by sending keys from n1 and n2 to n3
     """
-    currentTransaction = globalchain.transactions[-1]
+    currentTransaction = globalchain.revisionQueue[-1]
 
-    n1 = currentTransaction['buyee']
-    n2 = currentTransaction['buyer']
+    n1 = currentTransaction['author']
+    n2 = currentTransaction['editor']
 
     n3 = chooseMiner(n1, n2)
 
@@ -80,12 +80,12 @@ def mine():
     Creates previous hash for new block and adds it to the "mined" chain once n1 and n2 have done a joint POW
     Returns: True if new block could be added, False otherwise
     """
-    currentTransaction = globalchain.transactions[-1]
+    currentTransaction = globalchain.revisionQueue[-1]
 
-    n1 = currentTransaction['buyee']
-    n2 = currentTransaction['buyer']
+    n1 = currentTransaction['author']
+    n2 = currentTransaction['editor']
 
-    proof = globalchain.POW(n1['proof'], n2['proof'])
+    proof = globalchain.proofOfWork(n1['proof'], n2['proof'])
 
     previousHash = globalchain.hash(globalchain.lastBlock())
     newBlock = minedchain.createBlock(proof, previousHash)
@@ -111,7 +111,7 @@ def consensus():
             block = globalchain[i]
             block2 = globalchain[-1]
 
-            if(globalchain.POW(block, block2)):
+            if(globalchain.proofOfWork(block, block2)):
                 count += 1
 
         reached = (count / len(globalchain)) == .60
@@ -140,4 +140,4 @@ def registerAddress():
     while index < len(nodes): globalchain.registerAddress(nodes[index])
 
     print("Nodes added, queue cleared")
-    
+   
