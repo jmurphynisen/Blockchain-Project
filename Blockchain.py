@@ -108,7 +108,7 @@ class Blockchain(object):
 
         return newHash
 
-    def POW(self, n1proof, n2proof): #make some node
+    def proofOfWork(self, n1proof, n2proof): #make some node
         """
         Collaborative proof of work, where both nodes n1 and n2 give some statrting proof (just some integer), and continue until proof has 4 leading 0s
         Returns: n1 and n2's proof as a tuple
