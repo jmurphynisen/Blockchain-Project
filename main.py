@@ -27,6 +27,17 @@ if __name__ == '__main__':
 @app.route('/globalchain', methods=['GET'])
 def printChain(): return globalchain 
 
+def createCID(file):
+    """
+    Takes raw data as input and spits into chunks, and hashes it to create CID
+    """
+
+    chunks = chunkify(file)
+
+    cid = hash(chunks)
+
+    return cid
+
 def chooseMiner(n1, n2):
     """
     Choose random miner to be n3
@@ -38,17 +49,17 @@ def chooseMiner(n1, n2):
 
     return miner['index']
 
-@socketio.on('gives_keys', namespace='/private')
-def sendKeys(n1, n2, transaction):
+@socketio.on('give_keys', namespace='/private')
+def sendKeys(n1, n2, revision):
     """
-    Sends keys of n1 and n2 to n3 via private message, if it is able to do that (i.e. if n1 and n2 have produced keys and are in agreement on the transaction), then True
+    Sends keys of n1 and n2 to n3 via private message, if it is able to do that (i.e. if n1 and n2 have produced keys and are in agreement on the revision), then True
     Returns: True if both keys are present, False if otherwise
     TODO: GET SESSION IDS TO SEND MESSAGE
     """
     try: 
         message = {
-            'message': 'KEY1: {}'.format(transaction['buyeeKey']),
-            'message': 'KEY2: {}'.format(transaction['buyerKey'])
+            'message': 'KEY1: {}'.format(revision['authorKey']),
+            'message': 'KEY2: {}'.format(revision['editorKey'])
         }
         emit(message, broadcast=True)
         emit('Keys sent from ' + hash(n1) + ' and ' + hash(n2), broadcast=True)
@@ -62,17 +73,35 @@ def validate():
     """
     Validates block by sending keys from n1 and n2 to n3
     """
-    currentTransaction = globalchain.revisionQueue[-1]
+    currentRevision = globalchain.revisionQueue[-1]
 
-    n1 = currentTransaction['author']
-    n2 = currentTransaction['editor']
+    n1 = currentRevision['author']
+    n2 = currentRevision['editor']
 
     n3 = chooseMiner(n1, n2)
 
-    if sendKeys(n1, n2, currentTransaction):
+    if sendKeys(n1, n2, currentRevision):
         emit("New Block has been validated, ")
         validatedchain = minedchain
         #OPTIONAL: REWARD MINER
+
+@app.route('/revisions/new', methods=['POST'])
+def newRevision():
+    """
+    End point for adding revision to queue 
+    """
+    values = request.get_json()
+
+    required = ['editor', 'author', 'file']
+    for x in required:
+        if x not in values:
+            print('Missing values')
+            return False
+    cid = self.createCID(values[2])
+    index = minedchain.newRevsion(values['editor'], values['author'], values['CID'])
+
+    response = {'message': f'new revision added to queue {index}'}
+    return jsonify(response), 201
 
 @app.route('/mine', methods=['GET'])
 def mine():
@@ -80,10 +109,10 @@ def mine():
     Creates previous hash for new block and adds it to the "mined" chain once n1 and n2 have done a joint POW
     Returns: True if new block could be added, False otherwise
     """
-    currentTransaction = globalchain.revisionQueue[-1]
+    currentRevision = globalchain.revisionQueue[-1]
 
-    n1 = currentTransaction['author']
-    n2 = currentTransaction['editor']
+    n1 = currentRevision['author']
+    n2 = currentRevision['editor']
 
     proof = globalchain.proofOfWork(n1['proof'], n2['proof'])
 
@@ -91,7 +120,7 @@ def mine():
     newBlock = minedchain.createBlock(proof, previousHash)
     
     if newBlock :
-        print('New block has been added: ', newBlock)
+        print('New block has been added: ', newBlock, " proof: ", newBlock['proof'])
 
     else: 
         print('New block could not be added.')
