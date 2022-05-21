@@ -25,18 +25,25 @@ if __name__ == '__main__':
     socketio.run(app, debug=True)
 
 @app.route('/globalchain', methods=['GET'])
-def printChain(): return globalchain 
+def printChain(): 
+    response = {
+        'chain': globalchain.masterChain,
+        'length': len(globalchain.masterChain)
+    }
+    emit(response)
+    return globalchain 
 
 def createCID(file):
     """
     Takes raw data as input and spits into chunks, and hashes it to create CID
-    """
-
+    
     chunks = chunkify(file)
 
     cid = hash(chunks)
 
     return cid
+    """
+    return 0
 
 def chooseMiner(n1, n2):
     """
@@ -97,8 +104,8 @@ def newRevision():
         if x not in values:
             print('Missing values')
             return False
-    cid = self.createCID(values[2])
-    index = minedchain.newRevsion(values['editor'], values['author'], values['CID'])
+    cid = createCID(values[2])
+    index = minedchain.newRevsion(values['editor'], values['author'], cid)
 
     response = {'message': f'new revision added to queue {index}'}
     return jsonify(response), 201
@@ -117,7 +124,7 @@ def mine():
     proof = globalchain.proofOfWork(n1['proof'], n2['proof'])
 
     previousHash = globalchain.hash(globalchain.lastBlock())
-    newBlock = minedchain.createBlock(proof, previousHash)
+    newBlock = minedchain.createBlock(proof, previousHash, currentRevision['CID'])
     
     if newBlock :
         print('New block has been added: ', newBlock, " proof: ", newBlock['proof'])
@@ -169,4 +176,13 @@ def registerAddress():
     while index < len(nodes): globalchain.registerAddress(nodes[index])
 
     print("Nodes added, queue cleared")
-   
+
+if __name__ == '__main__':
+    from argparse import ArgumentParser
+
+    parser = ArgumentParser()
+    parser.add_argument('-p', '--port', default=5000, type=int, help='port to listen on')
+    args = parser.parse_args()
+    port = args.port
+
+    app.run(host='0.0.0.0', port=port)
