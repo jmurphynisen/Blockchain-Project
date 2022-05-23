@@ -21,9 +21,11 @@ class Blockchain(object):
         """
         Initialize chain with list of nodes on network, incoming revisions and candidates, and a master chain
         """
-        self.revisionQueue, self.masterChain, self.candidateQueue = [], [], []
+        self.revisionQueue, self.masterChain = [], []
         self.nodes = []
         self.genesis()
+        self.newRevision(author=None, editor=None, cid='0000', rawData=1234)
+        self.proofOfWork(1)
     
     def genesis(self): 
         """
@@ -38,6 +40,21 @@ class Blockchain(object):
         Pushes new block to candidate queue, then passes it to be validated and mined by chosen third party node (n3)
         Returns: created block
         """
+        if previousHash == 1: 
+            newBlock = {
+                    'index': len(self.masterChain) + 1,
+                    'timestamp': time.asctime(time.localtime()),
+                    'author': author,
+                    'revision': None,
+                    'CID': cid,
+                    'proof': proof,
+                    'location': self.getLocation(cid),
+                    'previousHash': previousHash,
+            }
+            self.masterChain.append(newBlock)
+            print("New block added at " + str(time.asctime(time.localtime())))
+            return newBlock
+
         for match in self.revisionQueue:
             if match['CID'] == cid:
                 newBlock = {
@@ -48,31 +65,16 @@ class Blockchain(object):
                     'CID': cid,
                     'proof': proof,
                     'location': self.getLocation(cid),
-                    'previousHash': previousHash or self.hash(self.masterChain[-1]),
+                    'previousHash': previousHash,
                 }
+                self.masterChain.append(newBlock)
+                print("New block added at " + str(time.asctime(time.localtime())))
+                return newBlock
+        
+        print('Could not add new block')
+        return 0
 
-        if previousHash == 1: 
-            newBlock = {
-                    'index': len(self.masterChain) + 1,
-                    'timestamp': time.asctime(time.localtime()),
-                    'author': author,
-                    'revision': None,
-                    'CID': cid,
-                    'proof': proof,
-                    'location': self.getLocation(cid),
-                    'previousHash': previousHash or self.hash(self.masterChain[-1]),
-            }
-            self.masterChain.append(newBlock)
-
-        self.candidateQueue.append(newBlock)
-
-        self.revisionQueue = self.revisionQueue.clear()
-
-        print("New block added at " + str(time.asctime(time.localtime())))
-
-        return newBlock
-
-    def generateKey():
+    def generateKey(self):
         """
         Generates a key using 4 random digits and uses HMAC-SHA512 encoding 
         (TRY MAKING THE NODE THE SEED)
@@ -106,7 +108,7 @@ class Blockchain(object):
                 'CID': cid,
                 'time': time.asctime(time.localtime()),
                 'revisionID': revisionID,
-                'rawData': hashlib.sha256(rawData)
+                'rawData': self.hash(rawData)
             })
         else:
             self.revisionQueue.append({
@@ -117,7 +119,7 @@ class Blockchain(object):
                 'CID': cid,
                 'time': time.asctime(time.localtime()),
                 'revisionID': revisionID,
-                'rawData': hashlib.sha256(rawData)
+                'rawData': self.hash(rawData)
             })
 
         lastBlock = self.lastBlock()
@@ -130,7 +132,7 @@ class Blockchain(object):
         """
         return self.masterChain[-1]
 
-    def hash(newBlock):
+    def hash(self, newBlock):
         """
         Creates new hash of block
         Returns: hash of block
@@ -146,10 +148,9 @@ class Blockchain(object):
         Returns: n1 and n2's proof as a tuple
         """
         while not self.validateProof(proof): proof += 1
-
         return proof
 
-    def validateProof(proof):
+    def validateProof(self, proof):
         """
         Creates hash of n1 and n2's proof
         Returns: if 4 leading digits are 0 then True, False otherwise
@@ -276,7 +277,7 @@ def validate():
     """
     Validates block by sending keys from n1 and n2 to n3
     """
-    currentblock = globalchain.lastBlock()
+    currentblock = minedchain.lastBlock()
     currentRevision = currentblock['revision']
 
     n1 = currentRevision['author']
