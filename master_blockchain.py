@@ -200,9 +200,9 @@ class Blockchain(object):
 
             if response.status_code == 200 and response.json()['length'] > currentChainLength:
                 longestChain = response.json()['chain']
-            
+                
+            neighborsTemp.pop(i)
             i += 1
-            neighborsTemp.pop(-1)
 
         if longestChain != None:
             self.masterChain = longestChain
@@ -338,12 +338,39 @@ def mine():
         response = {'New block could not be added.'}
         return jsonify(response), 200     
 
-@app.route('/verify', methods=['GET'])
+@app.route('/consensus', methods=['GET'])
 def consensus():
     """
-    Goes through each block in chain and has them do the proof of work with the new block, if at least 60% of them have verifiefed POW then new block is added
+    Goes through each block in chain and has them do the proof of work with the new block, if at least 60% of them have a chain longer than the current one then new block is added
     Returns: global message
     """
+
+    neighbors = globalchain.nodes
+
+    currentChainLength = len(globalchain.masterChain)
+
+    chains = []
+    neighborsTemp = neighbors
+    i = 0
+    while(neighborsTemp):
+        response = requests.get(f'http://{neighborsTemp[i]}/globalchain')
+
+        if response.status_code == 200 and response.json()['length'] > currentChainLength:
+            chains.append(response.json()['chain'])
+        
+        neighborsTemp.pop(i)
+        i += 1
+
+    if len(chains) / len(globalchain.nodes) >= .60:
+        response = {'message': 'Consensus on new block has been reached, new chain is now global chain'}
+        globalchain = validatedchain
+    else: 
+        response = {'message': 'Consensus has not been reached, old chain is reinstated'} 
+
+    return jsonify(response), 200
+
+    """
+    x
     if len(validatedchain) > len(globalchain):
         count = 0
         for i in range(0, len(globalchain)-1):
@@ -364,6 +391,8 @@ def consensus():
         return jsonify(response), 200
     else:
         emit("No new chain to be added")
+    """
+
 
 @app.route('/nodes/register_address', methods=['POST'])
 def registerAddress():
