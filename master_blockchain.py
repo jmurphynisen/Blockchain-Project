@@ -84,7 +84,12 @@ class Blockchain(object):
 
     def getLocation(self, cid):
         """
-        Use file system api to retrive location by cid or whatever file is stored as 
+        Use file system api to retrive location by CID, unimplemented.
+
+        Pseudocode: 
+        
+        location = ReadFromTableDirectory(cid)
+        return location
         """
         return 0
 
@@ -236,16 +241,16 @@ def printChain():
 
 def createCID(file):
     """
-    Takes raw data as input and spits into chunks, and hashes it to create CID
+    Takes raw data as input and spits into chunks, and hashes it to create CID, unimplemented
     
-    chunks = chunkify(file)
+    Pseudocode:
 
+    chunks = chunkify(file)
     cid = hash(chunks)
 
     return cid
     """
-    response = {'message': 'still work in progress'}
-    return jsonify(response), 400
+    return hash(file)
 
 def chooseMiner(n1, n2):
     """
@@ -307,7 +312,6 @@ def newRevision():
     End point for adding revision to queue 
     """
     values = request.get_json()
-    minedchain.newRevision(editor=None, author=None, cid='0000', rawData=1234)
     required = ['editor', 'author', 'file']
     for x in required:
         if x not in values:
@@ -336,7 +340,7 @@ def mine():
     #special case for when proposing revision to genesis block
     n1 = currentblock['author']
     n2 = currentRevision['editor']
-    if n1 != None and n2 != None:
+    if n2 != None:
         n3 = chooseMiner(n1, n2)
         proof = globalchain.proofOfWork(n3['proof'])
     else:
@@ -346,6 +350,14 @@ def mine():
     newBlock = minedchain.createBlock(proof=proof, previousHash=previousHash, cid=currentRevision['CID'], author=currentblock['author'], revisionId=currentRevision['revisionID'])
     
     if newBlock :
+        """
+        Write file to directory, unimplemented.
+
+        Pseudocode:
+
+        #finds free blocks in directory and allocates them to file from new block
+        Write(filename=newBlock['cid'], input=newBlock['rawdata'])
+        """
         response = {
             'message': "File overwritten",
             'CID': newBlock['CID'],
@@ -362,7 +374,7 @@ def mine():
 @app.route('/nodes/consensus', methods=['GET'])
 def consensus():
     """
-    Goes through each block in chain and has them do the proof of work with the new block, if at least 60% of them have a chain longer than the current one then new block is added
+    Goes through each node in set of nodes and if at least 60% of them have a chain longer than the current one then new block is added
     Returns: global message
     """
 
@@ -392,8 +404,8 @@ def consensus():
 def registerAddress():
     """
     Establish endpoint so nodes can be registered using API
+    Returns: message
     """
-    
     nodes = request.get_json().get('node')
     if not nodes: 
         response = {'message': 'Nodes could not be added'}
@@ -414,4 +426,3 @@ if __name__ == '__main__':
     port = args.port
 
     app.run(host='0.0.0.0', port=port)
-
