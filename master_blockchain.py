@@ -25,9 +25,8 @@ class Blockchain(object):
         """
         self.revisionQueue, self.masterChain = [], []
         self.nodes = []
+        self.registerAddress('http://127.0.0.1:5001')
         self.genesis()
-        #self.newRevision(author=None, editor=None, cid='0000', rawData=1234)
-        #self.proofOfWork(1)
     
     def genesis(self): 
         """
@@ -35,7 +34,7 @@ class Blockchain(object):
         Returns: new block 
         """
 
-        return self.createBlock(previousHash=1, proof=10000, cid='0000', author=None)
+        return self.createBlock(previousHash=1, proof=10000, cid='0000', author=self.nodes[0])
 
     def createBlock(self, proof, previousHash, cid, author, revisionId=None):
         """
@@ -311,7 +310,6 @@ def newRevision():
     """
     values = request.get_json()
     minedchain.newRevision(editor=None, author=None, cid='0000', rawData=1234)
-    print(minedchain.revisionQueue)
     required = ['editor', 'author', 'file']
     for x in required:
         if x not in values:
@@ -388,52 +386,34 @@ def consensus():
 
     if len(chains) / len(chain.nodes) >= .60:
         response = {'message': 'Consensus on new block has been reached, new chain is now global chain'}
-        setGlobalChain(validatedchain)
+        globalchain.masterChain = validatedchain.masterChain
         return jsonify(response), 200
     else: 
         response = {'message': 'Consensus has not been reached, old chain is reinstated'} 
         return jsonify(response), 400
-
-    """
-    x
-    if len(validatedchain) > len(globalchain):
-        count = 0
-        for i in range(0, len(globalchain)-1):
-            block = globalchain[i]
-            block2 = globalchain[-1]
-            if(globalchain.proofOfWork(block, block2)):
-                count += 1
-        reached = (count / len(globalchain)) == .60
-        if reached:
-            response = {'message': 'Consensus on new block has been reached, new chain is now global chain'}
-            globalchain = validatedchain
-        else:
-            response = {'message': 'Consensus has not been reached, old chain is reinstated'} 
-        return jsonify(response), 200
-    else:
-        emit("No new chain to be added")
-    """
 
 @app.route('/nodes/register_address', methods=['POST'])
 def registerAddress():
     """
     Establish endpoint so nodes can be registered using API
     """
-    nodes = request.get_json().get('nodes')
-
+    
+    nodes = request.get_json().get('node')
     if not nodes: 
         response = {'message': 'Nodes could not be added'}
-        return jsonify(response), 200
+        return jsonify(response), 400
 
     index = 0
-    while index < len(nodes): globalchain.registerAddress(nodes[index])
+    while index < len(nodes): 
+        globalchain.registerAddress(nodes[index])
+        index += 1
 
     response = {'message': 'Nodes added, queue cleared'}
     return jsonify(response), 200
 
 if __name__ == '__main__':
     parser = ArgumentParser()
-    parser.add_argument('-p', '--port', default=5000, type=int, help='port to listen on')
+    parser.add_argument('-p', '--port', default=5000, type=int)
     args = parser.parse_args()
     port = args.port
 
