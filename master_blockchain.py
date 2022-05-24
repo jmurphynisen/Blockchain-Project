@@ -1,8 +1,10 @@
 import hashlib
 import json
+from multiprocessing.sharedctypes import Value
 from time import time
 from uuid import uuid4
 from argparse import ArgumentParser
+from attr import has
 from flask import Flask, jsonify, request
 from flask_socketio import SocketIO, emit, send
 import random
@@ -24,8 +26,8 @@ class Blockchain(object):
         self.revisionQueue, self.masterChain = [], []
         self.nodes = []
         self.genesis()
-        self.newRevision(author=None, editor=None, cid='0000', rawData=1234)
-        self.proofOfWork(1)
+        #self.newRevision(author=None, editor=None, cid='0000', rawData=1234)
+        #self.proofOfWork(1)
     
     def genesis(self): 
         """
@@ -35,7 +37,7 @@ class Blockchain(object):
 
         return self.createBlock(previousHash=1, proof=10000, cid='0000', author=None)
 
-    def createBlock(self, proof, previousHash, cid, author):
+    def createBlock(self, proof, previousHash, cid, author, revisionId=None):
         """
         Pushes new block to candidate queue, then passes it to be validated and mined by chosen third party node (n3)
         Returns: created block
@@ -45,32 +47,30 @@ class Blockchain(object):
                     'index': len(self.masterChain) + 1,
                     'timestamp': time.asctime(time.localtime()),
                     'author': author,
-                    'revision': None,
                     'CID': cid,
                     'proof': proof,
+                    'revisionID': revisionId,
                     'location': self.getLocation(cid),
                     'previousHash': previousHash,
             }
             self.masterChain.append(newBlock)
             print("New block added at " + str(time.asctime(time.localtime())))
             return newBlock
-
-        for match in self.revisionQueue:
-            if match['CID'] == cid:
-                newBlock = {
-                    'index': len(self.masterChain) + 1,
-                    'timestamp': time.asctime(time.localtime()),
-                    'author': author,
-                    'revision': match,
-                    'CID': cid,
-                    'proof': proof,
-                    'location': self.getLocation(cid),
-                    'previousHash': previousHash,
-                }
-                self.masterChain.append(newBlock)
-                print("New block added at " + str(time.asctime(time.localtime())))
-                return newBlock
-        
+        else: 
+            newBlock = {
+                'index': len(self.masterChain) + 1,
+                'timestamp': time.asctime(time.localtime()),
+                'author': author,
+                'CID': cid,
+                'proof': proof,
+                'revisionID': revisionId,
+                'location': self.getLocation(cid),
+                'previousHash': previousHash,
+            }
+            self.masterChain.append(newBlock)
+            print("New block added at " + str(time.asctime(time.localtime())))
+            return newBlock
+    
         print('Could not add new block')
         return 0
 
@@ -98,7 +98,7 @@ class Blockchain(object):
         """
         Pushes new revision with editor (n2), author (n1), the location of the file, new raw data, CID, id of revision
         """
-        revisionID = random.getrandbits(128)
+        revisionID = random.getrandbits(64)
         if editor == None:
             self.revisionQueue.append({
                 'author': author,
@@ -175,13 +175,11 @@ class Blockchain(object):
         url = urlparse(address)
         if url.netloc:
             self.nodes.append(url.netloc)
-            return True
         elif url.path:
             self.nodes.append(url.path)
-            return True
         else:
-            print("Could not add URL")
-            return False
+            response = {'message': 'Could not parse URL'}
+            return jsonify(response), 400
   
     def resolveChain(self):
         """
@@ -200,9 +198,10 @@ class Blockchain(object):
 
             if response.status_code == 200 and response.json()['length'] > currentChainLength:
                 longestChain = response.json()['chain']
-                
+
             neighborsTemp.pop(i)
             i += 1
+            
 
         if longestChain != None:
             self.masterChain = longestChain
@@ -217,10 +216,19 @@ app = Flask(__name__)
 app.config['JSONIFY_PRETTYPRINT_REGULAR'] = False
 node_identifier = str(uuid4()).replace('-', '')
 
+pastRevisions = []
 globalchain = Blockchain()
 minedchain = Blockchain()
 validatedchain = Blockchain()
 
+
+def replaceValidatedChain(chain):
+    validatedchain = chain
+    return 0
+def getGlobalChain(): return globalchain
+def setGlobalChain(chain): 
+    globalchain = chain
+    return 0
 @app.route('/globalchain', methods=['GET'])
 def printChain(): 
     response = {
@@ -239,14 +247,15 @@ def createCID(file):
 
     return cid
     """
-    return 0
+    response = {'message': 'still work in progress'}
+    return jsonify(response), 400
 
 def chooseMiner(n1, n2):
     """
     Choose random miner to be n3
     Returns: index of chosen miner
     """
-    miner = globalchain.masterChain[randint(0, len(globalchain)-1)]['author']
+    miner = globalchain.nodes[randint(0, len(globalchain)-1)]
 
     #n3 cannot be n1 or n2
     if(n1 == miner or n2 == miner): chooseMiner(n1, n2)
@@ -263,14 +272,13 @@ def sendKeys(n1, n2, revision):
     try: 
         message = {
             'message': 'KEY1: {}'.format(revision['authorKey']),
-            'message': 'KEY2: {}'.format(revision['editorKey'])
+            'message1': 'KEY2: {}'.format(revision['editorKey'])
         }
-        emit(message, broadcast=True)
-        emit('Keys sent from ' + hash(n1) + ' and ' + hash(n2), broadcast=True)
+        #emit(message, broadcast=True)
+        #emit('Keys sent from ' + hash(n1) + ' and ' + hash(n2), broadcast=True)
         return jsonify(message), 200
     except:
-        response = {'message': 'Either n1 or n2 does not have their revision keys'}
-        return jsonify(response), 200
+        raise ValueError("Keys could not be produced")
 
 @app.route('/validate', methods=['GET'])
 def validate():
@@ -278,14 +286,22 @@ def validate():
     Validates block by sending keys from n1 and n2 to n3
     """
     currentblock = minedchain.lastBlock()
-    currentRevision = currentblock['revision']
-
+    print(pastRevisions)
+    for revision in pastRevisions:
+        if revision['revisionID'] == currentblock['revisionID']:
+            currentRevision = revision
+            break
+        return 'No blocks to validate!', 400
+    
     n1 = currentRevision['author']
     n2 = currentRevision['editor']
 
     if sendKeys(n1, n2, currentRevision):
-        emit("New Block has been validated, ")
-        validatedchain = minedchain
+        validatedchain.masterChain = minedchain.masterChain
+        hashBlock = hash(currentblock['CID'])
+
+        response = {'message': 'New block: ' + str(hashBlock) + ' has been validated'}
+        return jsonify(response) , 200
         #OPTIONAL: REWARD MINER
 
 @app.route('/revisions/new', methods=['POST'])
@@ -294,14 +310,15 @@ def newRevision():
     End point for adding revision to queue 
     """
     values = request.get_json()
-
+    minedchain.newRevision(editor=None, author=None, cid='0000', rawData=1234)
+    print(minedchain.revisionQueue)
     required = ['editor', 'author', 'file']
     for x in required:
         if x not in values:
-            print('Missing values')
-            return False
+            response = {'message': 'must have all values'}
+            return jsonify(response), 400
     cid = createCID(values[2])
-    index = minedchain.newRevsion(values['editor'], values['author'], cid)
+    index = minedchain.newRevision(values['editor'], values['author'], cid, rawData=values['file'])
 
     response = {'message': f'new revision added to queue {index}'}
     return jsonify(response), 201
@@ -312,62 +329,70 @@ def mine():
     Creates previous hash for new block and adds it to the "mined" chain once n1 and n2 have done a joint POW
     Returns: True if new block could be added, False otherwise
     """
-    currentblock = globalchain.lastBlock()
+    currentblock = minedchain.lastBlock()
+    for revision in minedchain.revisionQueue:
+        if revision['CID'] == currentblock['CID']:
+            currentRevision = revision
+            minedchain.revisionQueue.remove(revision)
+            pastRevisions.append(revision)
+            break
 
+    #special case for when proposing revision to genesis block
     n1 = currentblock['author']
-    currentRevision = currentblock['revision']
     n2 = currentRevision['editor']
-    n3 = chooseMiner(n1, n2)
-
-    proof = globalchain.proofOfWork(currentblock['proof'])
+    if n1 != None and n2 != None:
+        n3 = chooseMiner(n1, n2)
+        proof = globalchain.proofOfWork(n3['proof'])
+    else:
+        proof = globalchain.proofOfWork(currentblock['proof'])
 
     previousHash = globalchain.hash(globalchain.lastBlock())
-    newBlock = minedchain.createBlock(proof, previousHash, currentRevision['CID'])
+    newBlock = minedchain.createBlock(proof=proof, previousHash=previousHash, cid=currentRevision['CID'], author=currentblock['author'], revisionId=currentRevision['revisionID'])
     
     if newBlock :
         response = {
             'message': "File overwritten",
             'CID': newBlock['CID'],
             'index': newBlock['index'],
-            'revision': newBlock['revision'],
+            'revisionID': newBlock['revisionID'],
             'proof': newBlock['proof'],
         }
         return jsonify(response), 200
 
     else: 
-        response = {'New block could not be added.'}
-        return jsonify(response), 200     
+        response = {'message':'New block could not be added.'}
+        return jsonify(response), 400     
 
-@app.route('/consensus', methods=['GET'])
+@app.route('/nodes/consensus', methods=['GET'])
 def consensus():
     """
     Goes through each block in chain and has them do the proof of work with the new block, if at least 60% of them have a chain longer than the current one then new block is added
     Returns: global message
     """
 
-    neighbors = globalchain.nodes
+    chain = getGlobalChain()
 
-    currentChainLength = len(globalchain.masterChain)
+    currentChainLength = len(chain.masterChain)
 
     chains = []
-    neighborsTemp = neighbors
+    nodes = chain.nodes
     i = 0
-    while(neighborsTemp):
-        response = requests.get(f'http://{neighborsTemp[i]}/globalchain')
+    while(nodes):
+        response = requests.get(f'http://{nodes[i]}/globalchain')
 
         if response.status_code == 200 and response.json()['length'] > currentChainLength:
             chains.append(response.json()['chain'])
         
-        neighborsTemp.pop(i)
+        nodes.pop(i)
         i += 1
 
-    if len(chains) / len(globalchain.nodes) >= .60:
+    if len(chains) / len(chain.nodes) >= .60:
         response = {'message': 'Consensus on new block has been reached, new chain is now global chain'}
-        globalchain = validatedchain
+        setGlobalChain(validatedchain)
+        return jsonify(response), 200
     else: 
         response = {'message': 'Consensus has not been reached, old chain is reinstated'} 
-
-    return jsonify(response), 200
+        return jsonify(response), 400
 
     """
     x
@@ -376,23 +401,18 @@ def consensus():
         for i in range(0, len(globalchain)-1):
             block = globalchain[i]
             block2 = globalchain[-1]
-
             if(globalchain.proofOfWork(block, block2)):
                 count += 1
-
         reached = (count / len(globalchain)) == .60
-
         if reached:
             response = {'message': 'Consensus on new block has been reached, new chain is now global chain'}
             globalchain = validatedchain
         else:
             response = {'message': 'Consensus has not been reached, old chain is reinstated'} 
-
         return jsonify(response), 200
     else:
         emit("No new chain to be added")
     """
-
 
 @app.route('/nodes/register_address', methods=['POST'])
 def registerAddress():
