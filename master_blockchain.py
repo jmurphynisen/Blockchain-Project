@@ -1,3 +1,8 @@
+"""
+John Murphy
+499 Capstone Project
+Blockchain
+"""
 import hashlib
 import json
 from time import time
@@ -13,7 +18,7 @@ from random import randint
 
 class Blockchain(object):
     """
-    TODO: RESOLVE CONFLICTS
+    TODO: Integrate with file system
     """
 
     def __init__(self):
