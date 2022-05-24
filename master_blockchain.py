@@ -1,12 +1,9 @@
 import hashlib
 import json
-from multiprocessing.sharedctypes import Value
 from time import time
 from uuid import uuid4
 from argparse import ArgumentParser
-from attr import has
 from flask import Flask, jsonify, request
-from flask_socketio import SocketIO, emit, send
 import random
 import hmac
 from urllib.parse import urlparse
@@ -25,7 +22,6 @@ class Blockchain(object):
         """
         self.revisionQueue, self.masterChain = [], []
         self.nodes = []
-        self.registerAddress('http://127.0.0.1:5001')
         self.genesis()
     
     def genesis(self): 
@@ -67,11 +63,10 @@ class Blockchain(object):
                 'previousHash': previousHash,
             }
             self.masterChain.append(newBlock)
+
             print("New block added at " + str(time.asctime(time.localtime())))
+
             return newBlock
-    
-        print('Could not add new block')
-        return 0
 
     def generateKey(self):
         """
@@ -185,22 +180,17 @@ class Blockchain(object):
         If at least two chains from nodes on network conflict with each other, get the most up-to-date chain (longest)
         and replace each node's chain with that one.
         """
-        neighbors = self.nodes
+        nodeList = self.nodes
         longestChain = None
-
-        currentChainLength = len(self.masterChain)
-
-        neighborsTemp = neighbors
         i = 0
-        while(neighborsTemp):
-            response = requests.get(f'http://{neighborsTemp[i]}/globalchain')
 
-            if response.status_code == 200 and response.json()['length'] > currentChainLength:
+        while(i < len(nodeList)):
+            response = requests.get(f'http://{nodeList[i]}/globalchain')
+
+            if response.status_code == 200 and response.json()['len'] > len(self.masterChain):
                 longestChain = response.json()['chain']
 
-            neighborsTemp.pop(i)
-            i += 1
-            
+            i += 1       
 
         if longestChain != None:
             self.masterChain = longestChain
@@ -228,11 +218,19 @@ def getGlobalChain(): return globalchain
 def setGlobalChain(chain): 
     globalchain = chain
     return 0
+
+@app.route('/validatedchain', methods=['GET'])
+def getValidatedChain():
+    response = {
+        'chain': str(validatedchain.masterChain),
+        'len': int(len(validatedchain.masterChain))
+    }
+    return jsonify(response), 200
 @app.route('/globalchain', methods=['GET'])
 def printChain(): 
     response = {
         'chain': globalchain.masterChain,
-        'length': len(globalchain.masterChain)
+        'len': len(globalchain.masterChain)
     }
     return jsonify(response), 200
 
@@ -270,8 +268,9 @@ def sendKeys(n1, n2, revision):
     """
     try: 
         message = {
-            'message': 'KEY1: {}'.format(revision['authorKey']),
-            'message1': 'KEY2: {}'.format(revision['editorKey'])
+            'KEY1:': ' {}'.format(revision['authorKey']),
+            'KEY2:': ' {}'.format(revision['editorKey']),
+            'Nodes:': ' ' + str(hash(n1)) + ' ' + str(hash(n2))
         }
         #emit(message, broadcast=True)
         #emit('Keys sent from ' + hash(n1) + ' and ' + hash(n2), broadcast=True)
@@ -285,7 +284,7 @@ def validate():
     Validates block by sending keys from n1 and n2 to n3
     """
     currentblock = minedchain.lastBlock()
-    print(pastRevisions)
+
     for revision in pastRevisions:
         if revision['revisionID'] == currentblock['revisionID']:
             currentRevision = revision
@@ -301,7 +300,6 @@ def validate():
 
         response = {'message': 'New block: ' + str(hashBlock) + ' has been validated'}
         return jsonify(response) , 200
-        #OPTIONAL: REWARD MINER
 
 @app.route('/revisions/new', methods=['POST'])
 def newRevision():
@@ -319,7 +317,7 @@ def newRevision():
     index = minedchain.newRevision(values['editor'], values['author'], cid, rawData=values['file'])
 
     response = {'message': f'new revision added to queue {index}'}
-    return jsonify(response), 201
+    return jsonify(response), 200
 
 @app.route('/mine', methods=['GET'])
 def mine():
@@ -369,19 +367,17 @@ def consensus():
     """
 
     chain = getGlobalChain()
-
     currentChainLength = len(chain.masterChain)
-
     chains = []
     nodes = chain.nodes
     i = 0
-    while(nodes):
-        response = requests.get(f'http://{nodes[i]}/globalchain')
 
-        if response.status_code == 200 and response.json()['length'] > currentChainLength:
+    while(i < len(nodes)):
+        response = requests.get(f'http://{nodes[i]}/validatedchain')
+
+        if response.status_code == 200 and response.json()['len'] > currentChainLength:
             chains.append(response.json()['chain'])
         
-        nodes.pop(i)
         i += 1
 
     if len(chains) / len(chain.nodes) >= .60:
@@ -418,3 +414,4 @@ if __name__ == '__main__':
     port = args.port
 
     app.run(host='0.0.0.0', port=port)
+
